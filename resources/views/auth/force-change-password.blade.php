@@ -13,28 +13,33 @@
                     <form method="POST" action="{{ route('password.force.update') }}">
                         @csrf
 
-                        <div class="mb-3">
-                            <label class="form-label">One Time Password</label>
-                            <input type="text" name="current_otp" class="form-control" required>
-                            @error('current_otp')
-                                <div class="text-danger mt-1">{{ $message }}</div>
+                        <div class="form-group">
+                            <label>Current Password</label>
+                            <input type="password" name="current_password"
+                                class="form-control @error('current_password') is-invalid @enderror" required>
+                            @error('current_password')
+                                <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>
 
-                        <div class="mb-3">
-                            <label class="form-label">New Password</label>
-                            <input type="password" name="password" class="form-control" required>
+                        <div class="form-group">
+                            <label>New Password</label>
+                            <input type="password" name="password"
+                                class="form-control @error('password') is-invalid @enderror" required>
                             @error('password')
-                                <div class="text-danger mt-1">{{ $message }}</div>
+                                <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>
 
-                        <div class="mb-3">
-                            <label class="form-label">Confirm New Password</label>
-                            <input type="password" name="password_confirmation" class="form-control" required>
+                        <div class="form-group">
+                            <label>Confirm New Password</label>
+                            <input type="password" name="password_confirmation"
+                                class="form-control" required>
                         </div>
 
-                        <button type="submit" class="btn btn-primary">Change Password</button>
+                        <button type="submit" class="btn btn-primary">
+                            Change Password
+                        </button>
                     </form>
                 </div>
             </div>

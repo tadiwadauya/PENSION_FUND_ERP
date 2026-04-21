@@ -20,26 +20,26 @@ class ForcePasswordChangeController extends Controller
      * Update the user's password.
      */
     public function update(Request $request)
-    {
-        $request->validate([
-            'current_otp' => ['required', 'string'],
-            'password' => ['required', 'confirmed', 'min:8'],
+{
+    $request->validate([
+        'current_password' => ['required'],
+        'password' => ['required', 'confirmed', 'min:8'],
+    ]);
+
+    $user = auth()->user();
+
+    if (!Hash::check($request->current_password, $user->password)) {
+        return back()->withErrors([
+            'current_password' => 'Current password is incorrect.'
         ]);
-
-        $user = auth()->user();
-
-        if ($request->current_otp !== $user->otp_plain) {
-            return back()->withErrors([
-                'current_otp' => 'The one time password is incorrect.',
-            ])->withInput();
-        }
-
-        $user->password = Hash::make($request->password);
-        $user->otp_plain = null;
-        $user->must_change_password = false;
-        $user->password_changed_at = now();
-        $user->save();
-
-        return redirect()->route('dashboard')->with('success', 'Password changed successfully.');
     }
+
+    $user->update([
+        'password' => Hash::make($request->password),
+        'must_change_password' => false,
+    ]);
+
+    return redirect()->route('dashboard')
+        ->with('success', 'Password changed successfully.');
+}
 }

@@ -40,7 +40,6 @@ class User extends Authenticatable
         'is_head_of_department',
         'is_head_of_section',
         'must_change_password',
-        'otp_plain',
         'password_changed_at',
         'password',
     ];
@@ -53,7 +52,6 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
-        'otp_plain',
     ];
 
     /**

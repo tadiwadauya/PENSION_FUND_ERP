@@ -35,8 +35,7 @@ return new class extends Migration
             $table->boolean('is_head_of_section')->default(false)->after('is_head_of_department');
 
             $table->boolean('must_change_password')->default(false)->after('is_head_of_section');
-            $table->string('otp_plain')->nullable()->after('must_change_password');
-            $table->timestamp('password_changed_at')->nullable()->after('otp_plain');
+            $table->timestamp('password_changed_at')->nullable();
             $table->softDeletes();
         });
     }

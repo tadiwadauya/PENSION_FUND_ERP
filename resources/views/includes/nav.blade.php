@@ -16,7 +16,6 @@
 
     <!-- Right navbar links -->
     <ul class="navbar-nav ml-auto">
-
         <!-- Search -->
         <li class="nav-item">
             <a class="nav-link" data-widget="navbar-search" href="#" role="button">
@@ -39,8 +38,54 @@
             </div>
         </li>
 
-        <!-- User Dropdown -->
         @auth
+        <!-- Notifications -->
+        <li class="nav-item dropdown">
+            <a class="nav-link" data-toggle="dropdown" href="#">
+                <i class="far fa-bell"></i>
+                @if(auth()->user()->unreadNotifications->count() > 0)
+                    <span class="badge badge-warning navbar-badge">
+                        {{ auth()->user()->unreadNotifications->count() }}
+                    </span>
+                @endif
+            </a>
+
+            <div class="dropdown-menu dropdown-menu-lg dropdown-menu-right">
+                <span class="dropdown-header">
+                    {{ auth()->user()->unreadNotifications->count() }} New Notifications
+                </span>
+
+                <div class="dropdown-divider"></div>
+
+                @forelse(auth()->user()->unreadNotifications->take(5) as $notification)
+                    <div class="dropdown-item">
+                        <div style="white-space: normal;">
+                            <a href="{{ $notification->data['url'] ?? '#' }}" class="text-dark">
+                                <i class="fas fa-bell mr-2"></i>
+                                {{ $notification->data['message'] ?? 'Notification' }}
+                            </a>
+                            <br>
+                            <small class="text-muted">{{ $notification->created_at->diffForHumans() }}</small>
+                        </div>
+
+                        <form action="{{ route('notifications.markAsRead', $notification->id) }}" method="POST" class="mt-2">
+                            @csrf
+                            <button type="submit" class="btn btn-xs btn-primary">Mark as Read</button>
+                        </form>
+                    </div>
+                    <div class="dropdown-divider"></div>
+                @empty
+                    <span class="dropdown-item">No new notifications</span>
+                    <div class="dropdown-divider"></div>
+                @endforelse
+
+                <a href="{{ route('notifications.index') }}" class="dropdown-item dropdown-footer">
+                    See All Notifications
+                </a>
+            </div>
+        </li>
+
+        <!-- User Dropdown -->
         <li class="nav-item dropdown">
             <a class="nav-link" data-toggle="dropdown" href="#">
                 <i class="far fa-user mr-1"></i>

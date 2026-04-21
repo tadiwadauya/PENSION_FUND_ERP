@@ -57,7 +57,7 @@
 
         <nav class="mt-2">
             <ul class="nav nav-pills nav-sidebar flex-column" role="menu" data-accordion="false">
-
+                <!-- Dashboard -->
                 <li class="nav-item">
                     <a href="{{ route('dashboard') }}"
                        class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}">
@@ -119,6 +119,26 @@
                         </li>
                     @endif
 
+                    <li class="nav-header">PERFORMANCE MANAGEMENT</li>
+
+                    <li class="nav-item">
+                        <a href="{{ route('performance-targets.index') }}"
+                           class="nav-link {{ request()->routeIs('performance-targets.*') ? 'active' : '' }}">
+                            <i class="nav-icon fas fa-bullseye"></i>
+                            <p>Performance Targets</p>
+                        </a>
+                    </li>
+
+                    @if(auth()->user()->is_admin || auth()->user()->is_hr)
+                        <li class="nav-item">
+                            <a href="{{ route('performance-target-periods.index') }}"
+                               class="nav-link {{ request()->routeIs('performance-target-periods.*') ? 'active' : '' }}">
+                                <i class="nav-icon fas fa-calendar-alt"></i>
+                                <p>Performance Periods</p>
+                            </a>
+                        </li>
+                    @endif
+
                     <li class="nav-header">MY ACCOUNT</li>
 
                     <li class="nav-item">
@@ -134,6 +154,21 @@
                            class="nav-link {{ request()->routeIs('password.force.change') ? 'active' : '' }}">
                             <i class="nav-icon fas fa-key"></i>
                             <p>Change Password</p>
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a href="{{ route('notifications.index') }}"
+                           class="nav-link {{ request()->routeIs('notifications.*') ? 'active' : '' }}">
+                            <i class="nav-icon far fa-bell"></i>
+                            <p>
+                                Notifications
+                                @if(auth()->user()->unreadNotifications->count() > 0)
+                                    <span class="right badge badge-warning">
+                                        {{ auth()->user()->unreadNotifications->count() }}
+                                    </span>
+                                @endif
+                            </p>
                         </a>
                     </li>
 
