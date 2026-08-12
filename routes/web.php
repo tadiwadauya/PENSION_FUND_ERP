@@ -10,6 +10,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\Performance\PerformanceTarget\PerformancePeriodController;
 use App\Http\Controllers\Performance\PerformanceTarget\PerformanceTargetApprovalController;
 use App\Http\Controllers\Performance\PerformanceTarget\PerformanceTargetController;
+use App\Http\Controllers\Performance\PerformanceRatingScaleController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -47,6 +48,8 @@ Route::middleware(['auth', 'force.password.change'])->group(function () {
     | Performance Targets - all logged in users
     |--------------------------------------------------------------------------
     */
+
+
     Route::resource('performance-targets', PerformanceTargetController::class);
 
     Route::post('performance-targets/{performance_target}/submit', [PerformanceTargetApprovalController::class, 'submit'])
@@ -63,6 +66,15 @@ Route::middleware(['auth', 'force.password.change'])->group(function () {
 
     Route::get('performance-targets/{performance_target}/print', [PerformanceTargetController::class, 'print'])
         ->name('performance-targets.print');
+
+
+
+    /*
+    peformance ratings
+    */
+    Route::middleware(['auth'])->group(function () {
+    Route::resource('performance-rating-scales', PerformanceRatingScaleController::class);
+});
 
     /*
     |--------------------------------------------------------------------------

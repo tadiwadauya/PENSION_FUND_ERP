@@ -7,6 +7,7 @@ use App\Models\Performance\PerformancePeriod;
 use App\Models\Performance\PerformanceTarget;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class PerformanceTargetController extends Controller
 {
@@ -23,6 +24,7 @@ class PerformanceTargetController extends Controller
             'hrReviewer',
             'user.department',
             'user.section',
+            'sections',
         ])->latest();
 
         if (!$user->is_admin && !$user->is_hr) {
@@ -69,7 +71,9 @@ class PerformanceTargetController extends Controller
 
     public function create()
     {
-        $periods = PerformancePeriod::where('is_active', true)->latest()->get();
+        $periods = PerformancePeriod::where('is_active', true)
+            ->latest()
+            ->get();
 
         return view('performance.performance_targets.create', compact('periods'));
     }
@@ -116,17 +120,29 @@ class PerformanceTargetController extends Controller
             ' - PERFORMANCE TARGETS FOR THE PERIOD ' .
             strtoupper($period->name);
 
-        $target = PerformanceTarget::create([
-            'performance_period_id' => $period->id,
-            'user_id' => $user->id,
-            'assessor_id' => $assessor?->id,
-            'reviewer_id' => $reviewerId,
-            'hr_reviewer_id' => $hrReviewerId,
-            'title' => $title,
-            'status' => 'not_submitted',
-        ]);
+        $target = DB::transaction(function () use (
+            $period,
+            $user,
+            $assessor,
+            $reviewerId,
+            $hrReviewerId,
+            $title
+        ) {
+            $target = PerformanceTarget::create([
+                'performance_period_id' => $period->id,
+                'user_id' => $user->id,
+                'assessor_id' => $assessor?->id,
+                'reviewer_id' => $reviewerId,
+                'hr_reviewer_id' => $hrReviewerId,
+                'title' => $title,
+                'status' => 'not_submitted',
+            ]);
 
-        $this->createDefaultCompetencyItems($target);
+            $this->createDefaultSections($target);
+            $this->createDefaultCompetencyItems($target);
+
+            return $target;
+        });
 
         return redirect()->route('performance-targets.show', $target->id)
             ->with('success', 'Performance target form created successfully.');
@@ -141,6 +157,7 @@ class PerformanceTargetController extends Controller
             'assessor',
             'reviewer',
             'hrReviewer',
+            'sections',
             'items' => fn ($q) => $q->orderBy('sort_order'),
         ]);
 
@@ -159,6 +176,10 @@ class PerformanceTargetController extends Controller
             'period',
             'user.department',
             'user.section',
+            'assessor',
+            'reviewer',
+            'hrReviewer',
+            'sections',
             'items' => fn ($q) => $q->orderBy('sort_order'),
         ]);
 
@@ -168,70 +189,335 @@ class PerformanceTargetController extends Controller
     }
 
     public function update(Request $request, PerformanceTarget $performance_target)
-    {
-        $this->authorizeOwnerEdit($performance_target);
+{
+    $this->authorizeOwnerEdit($performance_target);
 
-        $request->validate([
-            'items' => ['required', 'array', 'min:1'],
+    $request->validate([
+        'items' => ['required', 'array', 'min:1'],
 
-            'items.*.section_code' => ['nullable', 'string', 'max:100'],
-            'items.*.section_title' => ['nullable', 'string', 'max:255'],
-            'items.*.is_default' => ['nullable', 'boolean'],
+        'items.*.section_code' => ['nullable', 'string', 'max:100'],
+        'items.*.section_title' => ['nullable', 'string', 'max:255'],
+        'items.*.is_default' => ['nullable', 'boolean'],
 
-            'items.*.perspective' => ['nullable', 'string', 'max:255'],
-            'items.*.target_type' => ['required', 'in:one_time,recurring'],
-            'items.*.frequency' => ['required', 'in:once,daily,weekly,monthly,quarterly,annual'],
+        'items.*.perspective' => ['nullable', 'string', 'max:255'],
 
-            'items.*.due_day' => ['nullable', 'integer', 'min:1', 'max:31'],
-            'items.*.due_month' => ['nullable', 'integer', 'min:1', 'max:12'],
-            'items.*.due_weekday' => ['nullable', 'integer', 'min:1', 'max:7'],
+        'items.*.target_type' => [
+            'required',
+            'in:one_time,recurring',
+        ],
 
-            'items.*.task' => ['required', 'string'],
-            'items.*.how_to_achieve' => ['nullable', 'string'],
-            'items.*.measure_target' => ['required', 'string'],
+        'items.*.frequency' => [
+            'required',
+            'in:once,daily,weekly,monthly,quarterly,annual',
+        ],
 
-            'items.*.per_cycle_target_value' => ['nullable', 'numeric'],
-            'items.*.period_target_value' => ['nullable', 'numeric'],
-            'items.*.unit_of_measure' => ['nullable', 'string', 'max:100'],
-            'items.*.evaluation_method' => ['required', 'in:per_cycle,cumulative,average'],
-            'items.*.target_description' => ['nullable', 'string'],
-            'items.*.due_date' => ['nullable', 'date'],
-        ]);
+        'items.*.due_day' => [
+            'nullable',
+            'integer',
+            'min:1',
+            'max:31',
+        ],
 
-        $performance_target->items()->delete();
+        'items.*.due_month' => [
+            'nullable',
+            'integer',
+            'min:1',
+            'max:12',
+        ],
 
-        foreach ($request->items as $index => $item) {
-            $performance_target->items()->create([
-                'sort_order' => $index + 1,
+        'items.*.due_weekday' => [
+            'nullable',
+            'integer',
+            'min:1',
+            'max:7',
+        ],
 
-                'section_code' => $item['section_code'] ?? 'SUMMARY_TASKS',
-                'section_title' => $item['section_title'] ?? 'SECTION 2 : SUMMARY OF PERFORMANCE ON TASKS',
-                'is_default' => !empty($item['is_default']),
+        'items.*.task' => [
+            'required',
+            'string',
+        ],
 
-                'perspective' => $item['perspective'] ?? null,
-                'target_type' => $item['target_type'],
-                'frequency' => $item['frequency'],
+        'items.*.how_to_achieve' => [
+            'nullable',
+            'string',
+        ],
 
-                'due_day' => $item['due_day'] ?? null,
-                'due_month' => $item['due_month'] ?? null,
-                'due_weekday' => $item['due_weekday'] ?? null,
+        'items.*.measure_target' => [
+            'required',
+            'string',
+        ],
 
-                'task' => $item['task'],
-                'how_to_achieve' => $item['how_to_achieve'] ?? null,
-                'measure_target' => $item['measure_target'],
+        'items.*.per_cycle_target_value' => [
+            'nullable',
+            'numeric',
+            'min:0',
+        ],
 
-                'per_cycle_target_value' => $item['per_cycle_target_value'] ?? null,
-                'period_target_value' => $item['period_target_value'] ?? null,
-                'unit_of_measure' => $item['unit_of_measure'] ?? null,
-                'evaluation_method' => $item['evaluation_method'] ?? 'per_cycle',
-                'target_description' => $item['target_description'] ?? null,
-                'due_date' => $item['due_date'] ?? null,
-            ]);
+        'items.*.period_target_value' => [
+            'nullable',
+            'numeric',
+            'min:0',
+        ],
+
+        'items.*.unit_of_measure' => [
+            'nullable',
+            'string',
+            'max:100',
+        ],
+
+        'items.*.evaluation_method' => [
+            'required',
+            'in:per_cycle,cumulative,average',
+        ],
+
+        'items.*.target_description' => [
+            'nullable',
+            'string',
+        ],
+
+        'items.*.weight' => [
+            'required',
+            'numeric',
+            'min:0',
+            'max:100',
+        ],
+
+        'items.*.due_date' => [
+            'nullable',
+            'date',
+        ],
+    ]);
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Validate task weights by section
+    |--------------------------------------------------------------------------
+    |
+    | Every section containing targets must have target weights totalling
+    | exactly 100%.
+    |
+    */
+
+    $itemsBySection = collect($request->items)
+        ->groupBy(function ($item) {
+            return $item['section_code'] ?? 'SUMMARY_TASKS';
+        });
+
+
+    $sectionNames = [
+        'SUMMARY_TASKS' =>
+            'SECTION 2 : SUMMARY OF PERFORMANCE ON TASKS',
+
+        'PEOPLE' =>
+            'SECTION A : PEOPLE',
+
+        'CUSTOMERS' =>
+            'SECTION B : CUSTOMERS',
+
+        'FINANCIAL' =>
+            'SECTION C : FINANCIAL',
+
+        'OPERATIONAL' =>
+            'SECTION D : OPERATIONAL EXCELLENCE',
+
+        'VALUES' =>
+            'SECTION E : VALUES & BEHAVIOURS',
+    ];
+
+
+    $weightErrors = [];
+
+
+    foreach ($itemsBySection as $sectionCode => $sectionItems) {
+
+        $totalWeight = $sectionItems->sum(function ($item) {
+            return (float) ($item['weight'] ?? 0);
+        });
+
+
+        $totalWeight =
+            round($totalWeight, 2);
+
+
+        if (abs($totalWeight - 100) > 0.01) {
+
+            $sectionName =
+                $sectionNames[$sectionCode]
+                ?? $sectionCode;
+
+
+            $weightErrors[] =
+                $sectionName .
+                ' target weights must total exactly 100%. ' .
+                'Current total: ' .
+                number_format($totalWeight, 2) .
+                '%.';
+
         }
 
-        return redirect()->route('performance-targets.show', $performance_target->id)
-            ->with('success', 'Performance target updated successfully.');
     }
+
+
+    if (!empty($weightErrors)) {
+
+        return back()
+            ->withInput()
+            ->withErrors($weightErrors);
+
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Validate overall section weights
+    |--------------------------------------------------------------------------
+    */
+
+    $performance_target->load('sections');
+
+
+    $sectionWeightTotal =
+        round(
+            (float) $performance_target
+                ->sections
+                ->sum('weight'),
+            2
+        );
+
+
+    if (
+        abs(
+            $sectionWeightTotal - 100
+        ) > 0.01
+    ) {
+
+        return back()
+            ->withInput()
+            ->withErrors([
+                'sections' =>
+                    'Performance section weights must total 100%. ' .
+                    'Current total: ' .
+                    number_format(
+                        $sectionWeightTotal,
+                        2
+                    ) .
+                    '%.',
+            ]);
+
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Replace target items
+    |--------------------------------------------------------------------------
+    */
+
+    $performance_target
+        ->items()
+        ->delete();
+
+
+    foreach (
+        $request->items
+        as $index => $item
+    ) {
+
+        $performance_target
+            ->items()
+            ->create([
+
+                'sort_order' =>
+                    $index + 1,
+
+                'section_code' =>
+                    $item['section_code']
+                    ?? 'SUMMARY_TASKS',
+
+                'section_title' =>
+                    $item['section_title']
+                    ?? 'SECTION 2 : SUMMARY OF PERFORMANCE ON TASKS',
+
+                'is_default' =>
+                    !empty(
+                        $item['is_default']
+                    ),
+
+                'perspective' =>
+                    $item['perspective']
+                    ?? null,
+
+                'target_type' =>
+                    $item['target_type'],
+
+                'frequency' =>
+                    $item['frequency'],
+
+                'due_day' =>
+                    $item['due_day']
+                    ?? null,
+
+                'due_month' =>
+                    $item['due_month']
+                    ?? null,
+
+                'due_weekday' =>
+                    $item['due_weekday']
+                    ?? null,
+
+                'task' =>
+                    $item['task'],
+
+                'how_to_achieve' =>
+                    $item['how_to_achieve']
+                    ?? null,
+
+                'measure_target' =>
+                    $item['measure_target'],
+
+                'per_cycle_target_value' =>
+                    $item['per_cycle_target_value']
+                    ?? null,
+
+                'period_target_value' =>
+                    $item['period_target_value']
+                    ?? null,
+
+                'unit_of_measure' =>
+                    $item['unit_of_measure']
+                    ?? null,
+
+                'evaluation_method' =>
+                    $item['evaluation_method']
+                    ?? 'per_cycle',
+
+                'target_description' =>
+                    $item['target_description']
+                    ?? null,
+
+                'weight' =>
+                    $item['weight'],
+
+                'due_date' =>
+                    $item['due_date']
+                    ?? null,
+
+            ]);
+
+    }
+
+
+    return redirect()
+        ->route(
+            'performance-targets.show',
+            $performance_target->id
+        )
+        ->with(
+            'success',
+            'Performance target updated successfully.'
+        );
+}
 
     public function destroy(PerformanceTarget $performance_target)
     {
@@ -254,6 +540,7 @@ class PerformanceTargetController extends Controller
             'assessor',
             'reviewer',
             'hrReviewer',
+            'sections',
             'items' => fn ($q) => $q->orderBy('sort_order'),
         ]);
 
@@ -262,12 +549,78 @@ class PerformanceTargetController extends Controller
         ]);
     }
 
+    private function createDefaultSections(PerformanceTarget $target): void
+    {
+        $sections = [
+            [
+                'section_code' => 'SUMMARY_TASKS',
+                'section_title' => 'SECTION 2 : SUMMARY OF PERFORMANCE ON TASKS',
+                'weight' => 60,
+                'sort_order' => 1,
+            ],
+            [
+                'section_code' => 'PEOPLE',
+                'section_title' => 'SECTION A : PEOPLE',
+                'weight' => 10,
+                'sort_order' => 2,
+            ],
+            [
+                'section_code' => 'CUSTOMERS',
+                'section_title' => 'SECTION B : CUSTOMERS',
+                'weight' => 10,
+                'sort_order' => 3,
+            ],
+            [
+                'section_code' => 'FINANCIAL',
+                'section_title' => 'SECTION C : FINANCIAL',
+                'weight' => 5,
+                'sort_order' => 4,
+            ],
+            [
+                'section_code' => 'OPERATIONAL',
+                'section_title' => 'SECTION D : OPERATIONAL EXCELLENCE',
+                'weight' => 10,
+                'sort_order' => 5,
+            ],
+            [
+                'section_code' => 'VALUES',
+                'section_title' => 'SECTION E : VALUES & BEHAVIOURS',
+                'weight' => 5,
+                'sort_order' => 6,
+            ],
+        ];
+
+        foreach ($sections as $section) {
+            $target->sections()->create($section);
+        }
+    }
+
     private function createDefaultCompetencyItems(PerformanceTarget $target): void
     {
         $sortOrder = 1;
 
         foreach ($this->defaultCompetencyItems() as $sectionCode => $section) {
-            foreach ($section['tasks'] as $taskName) {
+            $taskCount = count($section['tasks']);
+
+            $defaultWeight = $taskCount > 0
+                ? round(100 / $taskCount, 2)
+                : null;
+
+            foreach ($section['tasks'] as $taskIndex => $taskName) {
+                $weight = $defaultWeight;
+
+                /*
+                 * This ensures a section always totals exactly 100%.
+                 *
+                 * Example:
+                 * 3 tasks:
+                 * 33.33 + 33.33 + 33.34 = 100
+                 */
+                if ($taskIndex === $taskCount - 1 && $taskCount > 0) {
+                    $weightAlreadyAllocated = round($defaultWeight * ($taskCount - 1), 2);
+                    $weight = round(100 - $weightAlreadyAllocated, 2);
+                }
+
                 $target->items()->create([
                     'sort_order' => $sortOrder++,
 
@@ -276,6 +629,7 @@ class PerformanceTargetController extends Controller
                     'is_default' => true,
 
                     'perspective' => $section['title'],
+
                     'target_type' => 'recurring',
                     'frequency' => 'monthly',
 
@@ -284,14 +638,22 @@ class PerformanceTargetController extends Controller
                     'due_weekday' => null,
 
                     'task' => $taskName,
+
                     'how_to_achieve' => null,
+
                     'measure_target' => 'To be completed by staff member',
 
                     'per_cycle_target_value' => null,
                     'period_target_value' => null,
+
                     'unit_of_measure' => null,
+
                     'evaluation_method' => 'average',
+
                     'target_description' => null,
+
+                    'weight' => $weight,
+
                     'due_date' => null,
                 ]);
             }
@@ -371,7 +733,10 @@ class PerformanceTargetController extends Controller
 
     protected function authorizeOwnerEdit(PerformanceTarget $target): void
     {
-        if (auth()->id() !== $target->user_id || !$target->isEditable()) {
+        if (
+            auth()->id() !== $target->user_id ||
+            !$target->isEditable()
+        ) {
             abort(403);
         }
     }

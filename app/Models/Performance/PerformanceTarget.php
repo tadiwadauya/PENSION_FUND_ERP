@@ -5,6 +5,7 @@ namespace App\Models\Performance;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PerformanceTarget extends Model
 {
@@ -72,4 +73,9 @@ class PerformanceTarget extends Model
     {
         return !optional($this->assessor)->is_ceo;
     }
+    public function sections(): HasMany
+{
+    return $this->hasMany(PerformanceTargetSection::class)
+        ->orderBy('sort_order');
+}
 }

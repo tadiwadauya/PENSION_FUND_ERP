@@ -29,12 +29,14 @@ class PerformanceTargetItem extends Model
         'due_date',
         'assessor_comment',
         'hr_comment',
+        'weight',
     ];
 
     protected $casts = [
         'due_date' => 'date',
         'per_cycle_target_value' => 'decimal:2',
         'period_target_value' => 'decimal:2',
+        'weight' => 'decimal:2',
     ];
 
     public function performanceTarget()
