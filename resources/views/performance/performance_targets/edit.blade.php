@@ -22,9 +22,7 @@
 @endif
 
 @if(session('success'))
-    <div class="alert alert-success">
-        {{ session('success') }}
-    </div>
+    <div class="alert alert-success">{{ session('success') }}</div>
 @endif
 
 <div class="card">
@@ -39,35 +37,6 @@
 @method('PUT')
 
 @php
-    $items = old('items', $target->items->count()
-        ? $target->items->toArray()
-        : [[
-            'section_code' => 'SUMMARY_TASKS',
-            'section_title' => 'SECTION 2 : SUMMARY OF PERFORMANCE ON TASKS',
-            'is_default' => false,
-            'perspective' => 'Summary of Performance on Tasks',
-            'target_type' => 'one_time',
-            'frequency' => 'once',
-            'due_day' => '',
-            'due_month' => '',
-            'due_weekday' => '',
-            'task' => '',
-            'how_to_achieve' => '',
-            'measure_target' => '',
-            'per_cycle_target_value' => '',
-            'period_target_value' => '',
-            'unit_of_measure' => '',
-            'evaluation_method' => 'per_cycle',
-            'target_description' => '',
-            'weight' => '',
-            'due_date' => '',
-        ]]
-    );
-
-    $groupedItems = collect($items)->groupBy(function ($item) {
-        return $item['section_code'] ?? 'SUMMARY_TASKS';
-    });
-
     $sectionTitles = [
         'SUMMARY_TASKS' => 'SECTION 2 : SUMMARY OF PERFORMANCE ON TASKS',
         'PEOPLE' => 'SECTION A : PEOPLE',
@@ -77,15 +46,21 @@
         'VALUES' => 'SECTION E : VALUES & BEHAVIOURS',
     ];
 
-    $sectionWeights = $target->sections
-        ->keyBy('section_code');
+    $items = old('items', $target->items->toArray());
+
+    $groupedItems = collect($items)->groupBy(function ($item) {
+        return $item['section_code'] ?? 'SUMMARY_TASKS';
+    });
+
+    $sections = $target->sections->sortBy('sort_order')->values();
+
+    $sectionByCode = $sections->keyBy('section_code');
 
     $globalIndex = 0;
 @endphp
 
-
 {{-- ========================================================= --}}
-{{-- SECTION WEIGHTS SUMMARY --}}
+{{-- PERFORMANCE SECTION WEIGHTS --}}
 {{-- ========================================================= --}}
 
 <div class="card mb-4">
@@ -94,51 +69,75 @@
     </div>
 
     <div class="card-body">
+
+        <p class="text-muted">
+            Set how much each section contributes to the final performance score.
+            All section weights must total exactly 100%.
+        </p>
+
         <div class="table-responsive">
-            <table class="table table-bordered mb-0">
+            <table class="table table-bordered mb-2">
                 <thead>
                     <tr>
                         <th>Section</th>
-                        <th style="width: 150px;">Section Weight</th>
+                        <th style="width: 180px;">Section Weight (%)</th>
                     </tr>
                 </thead>
+
                 <tbody>
-                    @foreach($sectionTitles as $code => $title)
+                    @foreach($sectionTitles as $sectionCode => $sectionTitle)
+
                         @php
-                            $sectionWeight = $sectionWeights->get($code);
+                            $section = $sectionByCode->get($sectionCode);
                         @endphp
 
-                        <tr>
-                            <td>{{ $title }}</td>
-                            <td>
-                                <strong>
-                                    {{ number_format((float) ($sectionWeight?->weight ?? 0), 2) }}%
-                                </strong>
-                            </td>
-                        </tr>
+                        @if($section)
+                            <tr>
+                                <td>{{ $sectionTitle }}</td>
+
+                                <td>
+                                    <input type="hidden" name="sections[{{ $section->id }}][id]" value="{{ $section->id }}">
+
+                                    <div class="input-group">
+                                        <input type="number"
+                                               step="0.01"
+                                               min="0"
+                                               max="100"
+                                               name="sections[{{ $section->id }}][weight]"
+                                               value="{{ old('sections.' . $section->id . '.weight', $section->weight) }}"
+                                               class="form-control section-weight-input"
+                                               oninput="calculateSectionWeightTotal()"
+                                               required>
+
+                                        <div class="input-group-append">
+                                            <span class="input-group-text">%</span>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        @endif
+
                     @endforeach
 
                     <tr class="table-secondary">
+                        <td><strong>Total Section Weight</strong></td>
                         <td>
-                            <strong>Total Section Weight</strong>
-                        </td>
-
-                        <td>
-                            <strong>
-                                {{ number_format((float) $target->sections->sum('weight'), 2) }}%
-                            </strong>
+                            <strong id="section-weight-total">0.00%</strong>
                         </td>
                     </tr>
                 </tbody>
             </table>
         </div>
 
-        <small class="text-muted">
-            Section weights determine how much each appraisal section contributes to the final performance score.
-        </small>
+        <div id="section-weight-message" class="mt-2"></div>
+
     </div>
 </div>
 
+
+{{-- ========================================================= --}}
+{{-- TARGET ITEMS --}}
+{{-- ========================================================= --}}
 
 <div id="items-wrapper">
 
@@ -146,7 +145,7 @@
 
     @php
         $sectionItems = $groupedItems->get($sectionCode, collect());
-        $sectionWeight = $sectionWeights->get($sectionCode)?->weight ?? 0;
+        $sectionRecord = $sectionByCode->get($sectionCode);
     @endphp
 
     @if($sectionItems->count() > 0 || $sectionCode === 'SUMMARY_TASKS')
@@ -158,37 +157,34 @@
                 <div>
                     <strong>{{ $sectionTitle }}</strong>
 
-                    <span class="badge badge-light ml-2">
-                        Section Weight:
-                        {{ number_format((float) $sectionWeight, 2) }}%
-                    </span>
+                    @if($sectionRecord)
+                        <span class="badge badge-light ml-2 section-header-weight" data-section-header-weight="{{ $sectionRecord->id }}">
+                            Section Weight: {{ number_format((float) old('sections.' . $sectionRecord->id . '.weight', $sectionRecord->weight), 2) }}%
+                        </span>
+                    @endif
                 </div>
 
                 <div>
                     <strong>Task Weight Total:</strong>
-
-                    <span class="section-weight-total badge badge-warning"
-                          data-section-total="{{ $sectionCode }}">
-                        0.00%
-                    </span>
+                    <span class="badge badge-warning section-task-total" data-section-total="{{ $sectionCode }}">0.00%</span>
                 </div>
 
             </div>
 
-            <div class="card-body section-wrapper" data-section="{{ $sectionCode }}">
+            <div class="card-body">
 
                 @if($sectionCode === 'SUMMARY_TASKS')
                     <p class="text-muted">
                         Add the employee's actual job-related performance tasks here.
-                        The weights of all tasks in this section must total 100%.
+                        The weights of all Section 2 targets must total 100%.
                     </p>
                 @else
                     <p class="text-muted">
-                        These are default appraisal tasks. The task description is fixed.
-                        Complete the measurable target fields and allocate weights totalling 100% for this section.
+                        These are default appraisal tasks. The task itself is fixed.
+                        Complete the measurable target information and adjust the task weights where necessary.
+                        Task weights within this section must total 100%.
                     </p>
                 @endif
-
 
                 <div class="section-items" data-section-items="{{ $sectionCode }}">
 
@@ -199,41 +195,27 @@
                         $currentIndex = $globalIndex++;
                     @endphp
 
-                    <div class="card border mb-3 target-item"
-                         data-section-code="{{ $sectionCode }}">
+                    <div class="card border mb-3 target-item" data-section-code="{{ $sectionCode }}">
 
                         <div class="card-header d-flex justify-content-between align-items-center">
 
-                            <strong>
-                                Target Line {{ $currentIndex + 1 }}
-                            </strong>
+                            <strong>Target Line {{ $currentIndex + 1 }}</strong>
 
                             @if(!$isDefault)
-                                <button type="button"
-                                        class="btn btn-danger btn-sm"
-                                        onclick="removeItem(this)">
+                                <button type="button" class="btn btn-danger btn-sm" onclick="removeItem(this)">
                                     Remove
                                 </button>
                             @endif
+                            
 
                         </div>
 
                         <div class="card-body row">
 
-                            <input type="hidden"
-                                   name="items[{{ $currentIndex }}][section_code]"
-                                   value="{{ $item['section_code'] ?? $sectionCode }}">
+                            <input type="hidden" name="items[{{ $currentIndex }}][section_code]" value="{{ $item['section_code'] ?? $sectionCode }}">
+                            <input type="hidden" name="items[{{ $currentIndex }}][section_title]" value="{{ $item['section_title'] ?? $sectionTitle }}">
+                            <input type="hidden" name="items[{{ $currentIndex }}][is_default]" value="{{ $isDefault ? 1 : 0 }}">
 
-                            <input type="hidden"
-                                   name="items[{{ $currentIndex }}][section_title]"
-                                   value="{{ $item['section_title'] ?? $sectionTitle }}">
-
-                            <input type="hidden"
-                                   name="items[{{ $currentIndex }}][is_default]"
-                                   value="{{ $isDefault ? 1 : 0 }}">
-
-
-                            {{-- Perspective --}}
                             <div class="col-md-3 mb-3">
                                 <label>Perspective</label>
 
@@ -244,108 +226,56 @@
                                        {{ $isDefault ? 'readonly' : '' }}>
                             </div>
 
-
-                            {{-- Target Type --}}
                             <div class="col-md-3 mb-3">
                                 <label>Target Type</label>
 
-                                <select name="items[{{ $currentIndex }}][target_type]"
-                                        class="form-control target-type-select"
-                                        onchange="toggleTargetTypeFields(this)">
-
-                                    <option value="one_time"
-                                        {{ ($item['target_type'] ?? '') === 'one_time' ? 'selected' : '' }}>
-                                        One Time
-                                    </option>
-
-                                    <option value="recurring"
-                                        {{ ($item['target_type'] ?? '') === 'recurring' ? 'selected' : '' }}>
-                                        Recurring
-                                    </option>
-
+                                <select name="items[{{ $currentIndex }}][target_type]" class="form-control target-type-select" onchange="toggleTargetTypeFields(this)">
+                                    <option value="one_time" {{ ($item['target_type'] ?? '') === 'one_time' ? 'selected' : '' }}>One Time</option>
+                                    <option value="recurring" {{ ($item['target_type'] ?? '') === 'recurring' ? 'selected' : '' }}>Recurring</option>
                                 </select>
                             </div>
 
-
-                            {{-- Frequency --}}
                             <div class="col-md-3 mb-3">
                                 <label>Frequency</label>
 
-                                <select name="items[{{ $currentIndex }}][frequency]"
-                                        class="form-control frequency-select"
-                                        onchange="toggleFrequencyFields(this)">
-
-                                    <option value="once"
-                                        {{ ($item['frequency'] ?? '') === 'once' ? 'selected' : '' }}>
-                                        Once
-                                    </option>
-
-                                    <option value="daily"
-                                        {{ ($item['frequency'] ?? '') === 'daily' ? 'selected' : '' }}>
-                                        Daily
-                                    </option>
-
-                                    <option value="weekly"
-                                        {{ ($item['frequency'] ?? '') === 'weekly' ? 'selected' : '' }}>
-                                        Weekly
-                                    </option>
-
-                                    <option value="monthly"
-                                        {{ ($item['frequency'] ?? '') === 'monthly' ? 'selected' : '' }}>
-                                        Monthly
-                                    </option>
-
-                                    <option value="quarterly"
-                                        {{ ($item['frequency'] ?? '') === 'quarterly' ? 'selected' : '' }}>
-                                        Quarterly
-                                    </option>
-
-                                    <option value="annual"
-                                        {{ ($item['frequency'] ?? '') === 'annual' ? 'selected' : '' }}>
-                                        Annual
-                                    </option>
-
+                                <select name="items[{{ $currentIndex }}][frequency]" class="form-control frequency-select" onchange="toggleFrequencyFields(this)">
+                                    <option value="once" {{ ($item['frequency'] ?? '') === 'once' ? 'selected' : '' }}>Once</option>
+                                    <option value="daily" {{ ($item['frequency'] ?? '') === 'daily' ? 'selected' : '' }}>Daily</option>
+                                    <option value="weekly" {{ ($item['frequency'] ?? '') === 'weekly' ? 'selected' : '' }}>Weekly</option>
+                                    <option value="monthly" {{ ($item['frequency'] ?? '') === 'monthly' ? 'selected' : '' }}>Monthly</option>
+                                    <option value="quarterly" {{ ($item['frequency'] ?? '') === 'quarterly' ? 'selected' : '' }}>Quarterly</option>
+                                    <option value="annual" {{ ($item['frequency'] ?? '') === 'annual' ? 'selected' : '' }}>Annual</option>
                                 </select>
                             </div>
 
-
-                            {{-- Weight --}}
                             <div class="col-md-3 mb-3">
-                                <label>
-                                    Weight (%)
-                                    <span class="text-danger">*</span>
-                                </label>
+                                <label>Weight (%) <span class="text-danger">*</span></label>
 
                                 <input type="number"
                                        step="0.01"
                                        min="0"
                                        max="100"
                                        name="items[{{ $currentIndex }}][weight]"
+                                       value="{{ $item['weight'] ?? '' }}"
                                        class="form-control item-weight"
                                        data-section="{{ $sectionCode }}"
-                                       value="{{ $item['weight'] ?? '' }}"
-                                       placeholder="e.g. 25"
-                                       oninput="calculateSectionWeights()"
+                                       oninput="calculateTaskWeights()"
                                        required>
 
                                 <small class="text-muted">
-                                    Contribution of this target within this section.
+                                    Importance of this target within this section.
                                 </small>
                             </div>
 
-
-                            {{-- Due Date --}}
                             <div class="col-md-3 mb-3 one-time-date-field">
                                 <label>Due Date</label>
 
                                 <input type="date"
                                        name="items[{{ $currentIndex }}][due_date]"
                                        class="form-control"
-                                       value="{{ $item['due_date'] ?? '' }}">
+                                       value="{{ !empty($item['due_date']) ? \Illuminate\Support\Str::substr($item['due_date'], 0, 10) : '' }}">
                             </div>
 
-
-                            {{-- Due Day --}}
                             <div class="col-md-3 mb-3 due-day-field">
                                 <label>Due Day</label>
 
@@ -358,17 +288,11 @@
                                        placeholder="e.g. 25">
                             </div>
 
-
-                            {{-- Due Weekday --}}
                             <div class="col-md-3 mb-3 due-weekday-field">
-
                                 <label>Due Weekday</label>
 
-                                <select name="items[{{ $currentIndex }}][due_weekday]"
-                                        class="form-control">
-
+                                <select name="items[{{ $currentIndex }}][due_weekday]" class="form-control">
                                     <option value="">Select Day</option>
-
                                     <option value="1" {{ ($item['due_weekday'] ?? '') == 1 ? 'selected' : '' }}>Monday</option>
                                     <option value="2" {{ ($item['due_weekday'] ?? '') == 2 ? 'selected' : '' }}>Tuesday</option>
                                     <option value="3" {{ ($item['due_weekday'] ?? '') == 3 ? 'selected' : '' }}>Wednesday</option>
@@ -376,15 +300,10 @@
                                     <option value="5" {{ ($item['due_weekday'] ?? '') == 5 ? 'selected' : '' }}>Friday</option>
                                     <option value="6" {{ ($item['due_weekday'] ?? '') == 6 ? 'selected' : '' }}>Saturday</option>
                                     <option value="7" {{ ($item['due_weekday'] ?? '') == 7 ? 'selected' : '' }}>Sunday</option>
-
                                 </select>
-
                             </div>
 
-
-                            {{-- Due Month --}}
                             <div class="col-md-3 mb-3 due-month-field">
-
                                 <label>Due Month</label>
 
                                 <input type="number"
@@ -394,91 +313,56 @@
                                        class="form-control"
                                        value="{{ $item['due_month'] ?? '' }}"
                                        placeholder="1 - 12">
-
                             </div>
 
-
-                            {{-- Task --}}
                             <div class="col-md-12 mb-3">
-
                                 <label>Task</label>
 
                                 @if($isDefault)
-
-                                    <textarea class="form-control"
-                                              readonly>{{ $item['task'] ?? '' }}</textarea>
-
-                                    <input type="hidden"
-                                           name="items[{{ $currentIndex }}][task]"
-                                           value="{{ $item['task'] ?? '' }}">
-
+                                    <textarea class="form-control" readonly>{{ $item['task'] ?? '' }}</textarea>
+                                    <input type="hidden" name="items[{{ $currentIndex }}][task]" value="{{ $item['task'] ?? '' }}">
                                 @else
-
-                                    <textarea name="items[{{ $currentIndex }}][task]"
-                                              class="form-control"
-                                              required>{{ $item['task'] ?? '' }}</textarea>
-
+                                    <textarea name="items[{{ $currentIndex }}][task]" class="form-control" required>{{ $item['task'] ?? '' }}</textarea>
                                 @endif
-
                             </div>
 
-
-                            {{-- How To Achieve --}}
                             <div class="col-md-6 mb-3">
-
                                 <label>How To Achieve</label>
 
-                                <textarea name="items[{{ $currentIndex }}][how_to_achieve]"
-                                          class="form-control">{{ $item['how_to_achieve'] ?? '' }}</textarea>
-
+                                <textarea name="items[{{ $currentIndex }}][how_to_achieve]" class="form-control">{{ $item['how_to_achieve'] ?? '' }}</textarea>
                             </div>
 
-
-                            {{-- Measure --}}
                             <div class="col-md-6 mb-3">
-
                                 <label>Measure / Target</label>
 
-                                <textarea name="items[{{ $currentIndex }}][measure_target]"
-                                          class="form-control"
-                                          required>{{ $item['measure_target'] ?? '' }}</textarea>
-
+                                <textarea name="items[{{ $currentIndex }}][measure_target]" class="form-control" required>{{ $item['measure_target'] ?? '' }}</textarea>
                             </div>
 
-
-                            {{-- Per Cycle --}}
                             <div class="col-md-4 mb-3">
-
                                 <label>Per Cycle Target Value</label>
 
                                 <input type="number"
                                        step="0.01"
+                                       min="0"
                                        name="items[{{ $currentIndex }}][per_cycle_target_value]"
                                        class="form-control"
                                        value="{{ $item['per_cycle_target_value'] ?? '' }}"
                                        placeholder="e.g. 10">
-
                             </div>
 
-
-                            {{-- Period Target --}}
                             <div class="col-md-4 mb-3">
-
                                 <label>Period Target Value</label>
 
                                 <input type="number"
                                        step="0.01"
+                                       min="0"
                                        name="items[{{ $currentIndex }}][period_target_value]"
                                        class="form-control"
                                        value="{{ $item['period_target_value'] ?? '' }}"
                                        placeholder="e.g. 60">
-
                             </div>
 
-
-                            {{-- Unit --}}
                             <div class="col-md-4 mb-3">
-
                                 <label>Unit of Measure</label>
 
                                 <input type="text"
@@ -486,100 +370,55 @@
                                        class="form-control"
                                        value="{{ $item['unit_of_measure'] ?? '' }}"
                                        placeholder="%, Count, Days, Properties">
-
                             </div>
 
-
-                            {{-- Evaluation --}}
                             <div class="col-md-4 mb-3">
-
                                 <label>Evaluation Method</label>
 
-                                <select name="items[{{ $currentIndex }}][evaluation_method]"
-                                        class="form-control">
-
-                                    <option value="per_cycle"
-                                        {{ ($item['evaluation_method'] ?? '') === 'per_cycle' ? 'selected' : '' }}>
-                                        Per Cycle
-                                    </option>
-
-                                    <option value="cumulative"
-                                        {{ ($item['evaluation_method'] ?? '') === 'cumulative' ? 'selected' : '' }}>
-                                        Cumulative
-                                    </option>
-
-                                    <option value="average"
-                                        {{ ($item['evaluation_method'] ?? '') === 'average' ? 'selected' : '' }}>
-                                        Average
-                                    </option>
-
+                                <select name="items[{{ $currentIndex }}][evaluation_method]" class="form-control">
+                                    <option value="per_cycle" {{ ($item['evaluation_method'] ?? '') === 'per_cycle' ? 'selected' : '' }}>Per Cycle</option>
+                                    <option value="cumulative" {{ ($item['evaluation_method'] ?? '') === 'cumulative' ? 'selected' : '' }}>Cumulative</option>
+                                    <option value="average" {{ ($item['evaluation_method'] ?? '') === 'average' ? 'selected' : '' }}>Average</option>
                                 </select>
-
                             </div>
 
-
-                            {{-- Description --}}
                             <div class="col-md-8 mb-3">
-
                                 <label>Target Description</label>
 
-                                <textarea name="items[{{ $currentIndex }}][target_description]"
-                                          class="form-control">{{ $item['target_description'] ?? '' }}</textarea>
-
+                                <textarea name="items[{{ $currentIndex }}][target_description]" class="form-control">{{ $item['target_description'] ?? '' }}</textarea>
                             </div>
 
                         </div>
-
                     </div>
+                    {{-- Add specifically into the existing Section 2 --}}
+<button type="button" class="btn btn-secondary mb-3" onclick="addItem()">
+    Add Section 2 Target Line
+</button>
 
                 @empty
-
-                    @if($sectionCode !== 'SUMMARY_TASKS')
-                        <p class="text-muted">
-                            No default tasks found for this section.
-                        </p>
+                    @if($sectionCode === 'SUMMARY_TASKS')
+                        <div class="alert alert-info summary-empty-message">
+                            No Section 2 targets have been added yet. Click <strong>Add Section 2 Target Line</strong> below.
+                        </div>
                     @endif
-
                 @endforelse
 
                 </div>
 
-
-                {{-- Section Total --}}
                 <div class="alert alert-light border mt-3 mb-0">
-
                     <div class="d-flex justify-content-between">
-
-                        <strong>
-                            Total Task Weight for {{ $sectionTitle }}
-                        </strong>
-
-                        <strong>
-                            <span class="section-total-text"
-                                  data-section-total-text="{{ $sectionCode }}">
-                                0.00%
-                            </span>
-                        </strong>
-
+                        <strong>Total Task Weight for {{ $sectionTitle }}</strong>
+                        <strong class="section-total-text" data-section-total-text="{{ $sectionCode }}">0.00%</strong>
                     </div>
 
-                    <div class="progress mt-2" style="height: 20px;">
-                        <div class="progress-bar section-weight-progress"
-                             data-section-progress="{{ $sectionCode }}"
-                             role="progressbar"
-                             style="width:0%">
-                            0%
-                        </div>
+                    <div class="progress mt-2" style="height:20px;">
+                        <div class="progress-bar section-weight-progress" data-section-progress="{{ $sectionCode }}" style="width:0%">0%</div>
                     </div>
 
-                    <small class="section-weight-message"
-                           data-section-message="{{ $sectionCode }}">
-                    </small>
-
+                    <small class="section-weight-message" data-section-message="{{ $sectionCode }}"></small>
                 </div>
 
             </div>
-
         </div>
 
     @endif
@@ -589,48 +428,26 @@
 </div>
 
 
-{{-- ========================================================= --}}
-{{-- ADD SECTION 2 TASK --}}
-{{-- ========================================================= --}}
-
-<button type="button"
-        class="btn btn-secondary mb-3"
-        onclick="addItem()">
-
+{{-- Add specifically into the existing Section 2 --}}
+<button type="button" class="btn btn-secondary mb-3" onclick="addItem()">
     Add Section 2 Target Line
-
 </button>
 
-
-<button type="submit"
-        class="btn btn-primary mb-3">
-
-    Save Targets
-
+<button type="submit" class="btn btn-primary mb-3">
+    Save Targets and Weights
 </button>
 
 </form>
 
 
 @if($target->isEditable())
-
-    <form action="{{ route('performance-targets.submit', $target->id) }}"
-          method="POST"
-          id="submit-performance-target-form">
-
+    <form action="{{ route('performance-targets.submit', $target->id) }}" method="POST">
         @csrf
-
-        <button type="submit"
-                class="btn btn-success">
-
+        <button type="submit" class="btn btn-success">
             Submit Performance Target
-
         </button>
-
     </form>
-
 @endif
-
 
 </div>
 </div>
@@ -644,161 +461,79 @@
 
 
 @push('scripts')
-
 <script>
-
 let itemIndex = {{ $globalIndex }};
 
-
-/* ============================================================
-   ADD NEW SUMMARY TASK
-============================================================ */
-
 function addItem() {
+    const wrapper = document.querySelector('[data-section-items="SUMMARY_TASKS"]');
 
-    const sectionItems = document.querySelector(
-        '[data-section-items="SUMMARY_TASKS"]'
-    );
-
-    if (!sectionItems) {
-        alert('Summary of Performance on Tasks section was not found.');
+    if (!wrapper) {
+        alert('SECTION 2 : SUMMARY OF PERFORMANCE ON TASKS could not be found.');
         return;
     }
 
+    const emptyMessage = wrapper.querySelector('.summary-empty-message');
+
+    if (emptyMessage) {
+        emptyMessage.remove();
+    }
+
     const html = `
-        <div class="card border mb-3 target-item"
-             data-section-code="SUMMARY_TASKS">
-
+        <div class="card border mb-3 target-item" data-section-code="SUMMARY_TASKS">
             <div class="card-header d-flex justify-content-between align-items-center">
-
-                <strong>Target Line ${itemIndex + 1}</strong>
-
-                <button type="button"
-                        class="btn btn-danger btn-sm"
-                        onclick="removeItem(this)">
-                    Remove
-                </button>
-
+                <strong>New Section 2 Target</strong>
+                <button type="button" class="btn btn-danger btn-sm" onclick="removeItem(this)">Remove</button>
             </div>
 
             <div class="card-body row">
-
-                <input type="hidden"
-                       name="items[${itemIndex}][section_code]"
-                       value="SUMMARY_TASKS">
-
-                <input type="hidden"
-                       name="items[${itemIndex}][section_title]"
-                       value="SECTION 2 : SUMMARY OF PERFORMANCE ON TASKS">
-
-                <input type="hidden"
-                       name="items[${itemIndex}][is_default]"
-                       value="0">
-
+                <input type="hidden" name="items[${itemIndex}][section_code]" value="SUMMARY_TASKS">
+                <input type="hidden" name="items[${itemIndex}][section_title]" value="SECTION 2 : SUMMARY OF PERFORMANCE ON TASKS">
+                <input type="hidden" name="items[${itemIndex}][is_default]" value="0">
 
                 <div class="col-md-3 mb-3">
-
                     <label>Perspective</label>
-
-                    <input type="text"
-                           name="items[${itemIndex}][perspective]"
-                           class="form-control"
-                           value="Summary of Performance on Tasks">
-
+                    <input type="text" name="items[${itemIndex}][perspective]" class="form-control" value="Summary of Performance on Tasks">
                 </div>
 
-
                 <div class="col-md-3 mb-3">
-
                     <label>Target Type</label>
-
-                    <select name="items[${itemIndex}][target_type]"
-                            class="form-control target-type-select"
-                            onchange="toggleTargetTypeFields(this)">
-
+                    <select name="items[${itemIndex}][target_type]" class="form-control target-type-select" onchange="toggleTargetTypeFields(this)">
                         <option value="one_time">One Time</option>
                         <option value="recurring">Recurring</option>
-
                     </select>
-
                 </div>
 
-
                 <div class="col-md-3 mb-3">
-
                     <label>Frequency</label>
-
-                    <select name="items[${itemIndex}][frequency]"
-                            class="form-control frequency-select"
-                            onchange="toggleFrequencyFields(this)">
-
+                    <select name="items[${itemIndex}][frequency]" class="form-control frequency-select" onchange="toggleFrequencyFields(this)">
                         <option value="once">Once</option>
                         <option value="daily">Daily</option>
                         <option value="weekly">Weekly</option>
                         <option value="monthly">Monthly</option>
                         <option value="quarterly">Quarterly</option>
                         <option value="annual">Annual</option>
-
                     </select>
-
                 </div>
-
 
                 <div class="col-md-3 mb-3">
-
-                    <label>
-                        Weight (%)
-                        <span class="text-danger">*</span>
-                    </label>
-
-                    <input type="number"
-                           step="0.01"
-                           min="0"
-                           max="100"
-                           name="items[${itemIndex}][weight]"
-                           class="form-control item-weight"
-                           data-section="SUMMARY_TASKS"
-                           placeholder="e.g. 25"
-                           oninput="calculateSectionWeights()"
-                           required>
-
+                    <label>Weight (%) <span class="text-danger">*</span></label>
+                    <input type="number" step="0.01" min="0" max="100" name="items[${itemIndex}][weight]" class="form-control item-weight" data-section="SUMMARY_TASKS" oninput="calculateTaskWeights()" placeholder="e.g. 20" required>
+                    <small class="text-muted">Importance of this target within Section 2.</small>
                 </div>
-
 
                 <div class="col-md-3 mb-3 one-time-date-field">
-
                     <label>Due Date</label>
-
-                    <input type="date"
-                           name="items[${itemIndex}][due_date]"
-                           class="form-control">
-
+                    <input type="date" name="items[${itemIndex}][due_date]" class="form-control">
                 </div>
 
-
-                <div class="col-md-3 mb-3 due-day-field"
-                     style="display:none;">
-
+                <div class="col-md-3 mb-3 due-day-field" style="display:none;">
                     <label>Due Day</label>
-
-                    <input type="number"
-                           min="1"
-                           max="31"
-                           name="items[${itemIndex}][due_day]"
-                           class="form-control"
-                           placeholder="e.g. 25">
-
+                    <input type="number" min="1" max="31" name="items[${itemIndex}][due_day]" class="form-control" placeholder="e.g. 25">
                 </div>
 
-
-                <div class="col-md-3 mb-3 due-weekday-field"
-                     style="display:none;">
-
+                <div class="col-md-3 mb-3 due-weekday-field" style="display:none;">
                     <label>Due Weekday</label>
-
-                    <select name="items[${itemIndex}][due_weekday]"
-                            class="form-control">
-
+                    <select name="items[${itemIndex}][due_weekday]" class="form-control">
                         <option value="">Select Day</option>
                         <option value="1">Monday</option>
                         <option value="2">Tuesday</option>
@@ -807,203 +542,79 @@ function addItem() {
                         <option value="5">Friday</option>
                         <option value="6">Saturday</option>
                         <option value="7">Sunday</option>
-
                     </select>
-
                 </div>
 
-
-                <div class="col-md-3 mb-3 due-month-field"
-                     style="display:none;">
-
+                <div class="col-md-3 mb-3 due-month-field" style="display:none;">
                     <label>Due Month</label>
-
-                    <input type="number"
-                           min="1"
-                           max="12"
-                           name="items[${itemIndex}][due_month]"
-                           class="form-control"
-                           placeholder="1 - 12">
-
+                    <input type="number" min="1" max="12" name="items[${itemIndex}][due_month]" class="form-control" placeholder="1 - 12">
                 </div>
-
 
                 <div class="col-md-12 mb-3">
-
                     <label>Task</label>
-
-                    <textarea name="items[${itemIndex}][task]"
-                              class="form-control"
-                              required></textarea>
-
+                    <textarea name="items[${itemIndex}][task]" class="form-control" required></textarea>
                 </div>
 
-
                 <div class="col-md-6 mb-3">
-
                     <label>How To Achieve</label>
-
-                    <textarea name="items[${itemIndex}][how_to_achieve]"
-                              class="form-control"></textarea>
-
+                    <textarea name="items[${itemIndex}][how_to_achieve]" class="form-control"></textarea>
                 </div>
-
 
                 <div class="col-md-6 mb-3">
-
                     <label>Measure / Target</label>
-
-                    <textarea name="items[${itemIndex}][measure_target]"
-                              class="form-control"
-                              required></textarea>
-
+                    <textarea name="items[${itemIndex}][measure_target]" class="form-control" required></textarea>
                 </div>
 
-
                 <div class="col-md-4 mb-3">
-
                     <label>Per Cycle Target Value</label>
-
-                    <input type="number"
-                           step="0.01"
-                           name="items[${itemIndex}][per_cycle_target_value]"
-                           class="form-control">
-
+                    <input type="number" step="0.01" min="0" name="items[${itemIndex}][per_cycle_target_value]" class="form-control" placeholder="e.g. 10">
                 </div>
 
-
                 <div class="col-md-4 mb-3">
-
                     <label>Period Target Value</label>
-
-                    <input type="number"
-                           step="0.01"
-                           name="items[${itemIndex}][period_target_value]"
-                           class="form-control">
-
+                    <input type="number" step="0.01" min="0" name="items[${itemIndex}][period_target_value]" class="form-control" placeholder="e.g. 60">
                 </div>
 
-
                 <div class="col-md-4 mb-3">
-
                     <label>Unit of Measure</label>
-
-                    <input type="text"
-                           name="items[${itemIndex}][unit_of_measure]"
-                           class="form-control"
-                           placeholder="%, Count, Days, Properties">
-
+                    <input type="text" name="items[${itemIndex}][unit_of_measure]" class="form-control" placeholder="%, Count, Days, Properties">
                 </div>
 
-
                 <div class="col-md-4 mb-3">
-
                     <label>Evaluation Method</label>
-
-                    <select name="items[${itemIndex}][evaluation_method]"
-                            class="form-control">
-
+                    <select name="items[${itemIndex}][evaluation_method]" class="form-control">
                         <option value="per_cycle">Per Cycle</option>
                         <option value="cumulative">Cumulative</option>
                         <option value="average">Average</option>
-
                     </select>
-
                 </div>
-
 
                 <div class="col-md-8 mb-3">
-
                     <label>Target Description</label>
-
-                    <textarea name="items[${itemIndex}][target_description]"
-                              class="form-control"></textarea>
-
+                    <textarea name="items[${itemIndex}][target_description]" class="form-control"></textarea>
                 </div>
-
             </div>
-
         </div>
     `;
 
-    sectionItems.insertAdjacentHTML('beforeend', html);
+    wrapper.insertAdjacentHTML('beforeend', html);
 
     itemIndex++;
 
-    calculateSectionWeights();
-
+    calculateTaskWeights();
 }
 
-
-/* ============================================================
-   REMOVE TARGET
-============================================================ */
-
 function removeItem(button) {
-
     const item = button.closest('.target-item');
 
     if (item) {
         item.remove();
     }
 
-    calculateSectionWeights();
-
+    calculateTaskWeights();
 }
-
-
-/* ============================================================
-   TARGET TYPE
-============================================================ */
 
 function toggleTargetTypeFields(select) {
-
-    const cardBody = select.closest('.card-body');
-
-    if (!cardBody) {
-        return;
-    }
-
-    const targetType = select.value;
-
-    const dueDateField =
-        cardBody.querySelector('.one-time-date-field');
-
-    const frequencySelect =
-        cardBody.querySelector('.frequency-select');
-
-
-    if (targetType === 'one_time') {
-
-        if (frequencySelect) {
-            frequencySelect.value = 'once';
-        }
-
-        if (dueDateField) {
-            dueDateField.style.display = 'block';
-        }
-
-        hideRecurringFields(cardBody);
-
-    } else {
-
-        if (dueDateField) {
-            dueDateField.style.display = 'none';
-        }
-
-        toggleFrequencyFields(frequencySelect);
-
-    }
-
-}
-
-
-/* ============================================================
-   FREQUENCY
-============================================================ */
-
-function toggleFrequencyFields(select) {
-
     if (!select) {
         return;
     }
@@ -1014,60 +625,72 @@ function toggleFrequencyFields(select) {
         return;
     }
 
-    const frequency = select.value;
+    const dueDateField = cardBody.querySelector('.one-time-date-field');
+    const frequencySelect = cardBody.querySelector('.frequency-select');
 
-    const targetTypeSelect =
-        cardBody.querySelector('.target-type-select');
+    if (select.value === 'one_time') {
+        if (frequencySelect) {
+            frequencySelect.value = 'once';
+        }
 
-    if (!targetTypeSelect) {
+        if (dueDateField) {
+            dueDateField.style.display = 'block';
+        }
+
+        hideRecurringFields(cardBody);
+    } else {
+        if (dueDateField) {
+            dueDateField.style.display = 'none';
+        }
+
+        if (frequencySelect && frequencySelect.value === 'once') {
+            frequencySelect.value = 'monthly';
+        }
+
+        toggleFrequencyFields(frequencySelect);
+    }
+}
+
+function toggleFrequencyFields(select) {
+    if (!select) {
         return;
     }
 
-    const targetType =
-        targetTypeSelect.value;
+    const cardBody = select.closest('.card-body');
+
+    if (!cardBody) {
+        return;
+    }
+
+    const targetTypeSelect = cardBody.querySelector('.target-type-select');
 
     hideRecurringFields(cardBody);
 
-
-    if (targetType !== 'recurring') {
+    if (!targetTypeSelect || targetTypeSelect.value !== 'recurring') {
         return;
     }
 
-
-    if (
-        frequency === 'monthly' ||
-        frequency === 'quarterly'
-    ) {
-
-        const dueDay =
-            cardBody.querySelector('.due-day-field');
-
-        if (dueDay) {
-            dueDay.style.display = 'block';
-        }
-
-    }
-
+    const frequency = select.value;
 
     if (frequency === 'weekly') {
+        const field = cardBody.querySelector('.due-weekday-field');
 
-        const dueWeekday =
-            cardBody.querySelector('.due-weekday-field');
-
-        if (dueWeekday) {
-            dueWeekday.style.display = 'block';
+        if (field) {
+            field.style.display = 'block';
         }
-
     }
 
+    if (frequency === 'monthly' || frequency === 'quarterly') {
+        const field = cardBody.querySelector('.due-day-field');
+
+        if (field) {
+            field.style.display = 'block';
+        }
+    }
 
     if (frequency === 'annual') {
-
-        const dueDay =
-            cardBody.querySelector('.due-day-field');
-
-        const dueMonth =
-            cardBody.querySelector('.due-month-field');
+        const dueDay = cardBody.querySelector('.due-day-field');
+        const dueMonth = cardBody.querySelector('.due-month-field');
 
         if (dueDay) {
             dueDay.style.display = 'block';
@@ -1076,27 +699,13 @@ function toggleFrequencyFields(select) {
         if (dueMonth) {
             dueMonth.style.display = 'block';
         }
-
     }
-
 }
 
-
-/* ============================================================
-   HIDE RECURRING FIELDS
-============================================================ */
-
 function hideRecurringFields(cardBody) {
-
-    const dueDay =
-        cardBody.querySelector('.due-day-field');
-
-    const dueWeekday =
-        cardBody.querySelector('.due-weekday-field');
-
-    const dueMonth =
-        cardBody.querySelector('.due-month-field');
-
+    const dueDay = cardBody.querySelector('.due-day-field');
+    const dueWeekday = cardBody.querySelector('.due-weekday-field');
+    const dueMonth = cardBody.querySelector('.due-month-field');
 
     if (dueDay) {
         dueDay.style.display = 'none';
@@ -1109,16 +718,63 @@ function hideRecurringFields(cardBody) {
     if (dueMonth) {
         dueMonth.style.display = 'none';
     }
-
 }
 
+function calculateSectionWeightTotal() {
+    let total = 0;
 
-/* ============================================================
-   CALCULATE WEIGHTS
-============================================================ */
+    document.querySelectorAll('.section-weight-input').forEach(function(input) {
+        const value = parseFloat(input.value);
 
-function calculateSectionWeights() {
+        if (!isNaN(value)) {
+            total += value;
+        }
 
+        const sectionId = input.name.match(/sections\[(\d+)\]/);
+
+        if (sectionId) {
+            const badge = document.querySelector('[data-section-header-weight="' + sectionId[1] + '"]');
+
+            if (badge) {
+                badge.textContent = 'Section Weight: ' + (isNaN(value) ? '0.00' : value.toFixed(2)) + '%';
+            }
+        }
+    });
+
+    total = Math.round(total * 100) / 100;
+
+    const totalElement = document.getElementById('section-weight-total');
+    const message = document.getElementById('section-weight-message');
+
+    if (totalElement) {
+        totalElement.textContent = total.toFixed(2) + '%';
+
+        totalElement.classList.remove('text-success', 'text-danger', 'text-warning');
+
+        if (Math.abs(total - 100) <= 0.01) {
+            totalElement.classList.add('text-success');
+        } else if (total > 100) {
+            totalElement.classList.add('text-danger');
+        } else {
+            totalElement.classList.add('text-warning');
+        }
+    }
+
+    if (message) {
+        if (Math.abs(total - 100) <= 0.01) {
+            message.className = 'text-success font-weight-bold';
+            message.textContent = 'Section weight allocation is complete.';
+        } else if (total < 100) {
+            message.className = 'text-warning font-weight-bold';
+            message.textContent = (100 - total).toFixed(2) + '% still needs to be allocated.';
+        } else {
+            message.className = 'text-danger font-weight-bold';
+            message.textContent = 'Section weights exceed 100% by ' + (total - 100).toFixed(2) + '%.';
+        }
+    }
+}
+
+function calculateTaskWeights() {
     const sectionCodes = [
         'SUMMARY_TASKS',
         'PEOPLE',
@@ -1128,228 +784,88 @@ function calculateSectionWeights() {
         'VALUES'
     ];
 
-
-    sectionCodes.forEach(function (sectionCode) {
-
-        const inputs =
-            document.querySelectorAll(
-                '.item-weight[data-section="' +
-                sectionCode +
-                '"]'
-            );
+    sectionCodes.forEach(function(sectionCode) {
+        const inputs = document.querySelectorAll('.item-weight[data-section="' + sectionCode + '"]');
 
         let total = 0;
 
-
-        inputs.forEach(function (input) {
-
-            const value =
-                parseFloat(input.value);
+        inputs.forEach(function(input) {
+            const value = parseFloat(input.value);
 
             if (!isNaN(value)) {
                 total += value;
             }
-
         });
 
+        total = Math.round(total * 100) / 100;
 
-        total =
-            Math.round(total * 100) / 100;
-
-
-        const badge =
-            document.querySelector(
-                '[data-section-total="' +
-                sectionCode +
-                '"]'
-            );
-
-        const totalText =
-            document.querySelector(
-                '[data-section-total-text="' +
-                sectionCode +
-                '"]'
-            );
-
-        const progress =
-            document.querySelector(
-                '[data-section-progress="' +
-                sectionCode +
-                '"]'
-            );
-
-        const message =
-            document.querySelector(
-                '[data-section-message="' +
-                sectionCode +
-                '"]'
-            );
-
+        const badge = document.querySelector('[data-section-total="' + sectionCode + '"]');
+        const totalText = document.querySelector('[data-section-total-text="' + sectionCode + '"]');
+        const progress = document.querySelector('[data-section-progress="' + sectionCode + '"]');
+        const message = document.querySelector('[data-section-message="' + sectionCode + '"]');
 
         if (badge) {
+            badge.textContent = total.toFixed(2) + '%';
+            badge.classList.remove('badge-success', 'badge-danger', 'badge-warning');
 
-            badge.textContent =
-                total.toFixed(2) + '%';
-
-            badge.classList.remove(
-                'badge-success',
-                'badge-danger',
-                'badge-warning'
-            );
-
-
-            if (total === 100) {
-
-                badge.classList.add(
-                    'badge-success'
-                );
-
+            if (Math.abs(total - 100) <= 0.01) {
+                badge.classList.add('badge-success');
             } else {
-
-                badge.classList.add(
-                    'badge-danger'
-                );
-
+                badge.classList.add('badge-danger');
             }
-
         }
-
 
         if (totalText) {
-
-            totalText.textContent =
-                total.toFixed(2) + '%';
-
+            totalText.textContent = total.toFixed(2) + '%';
         }
-
 
         if (progress) {
+            const visualWidth = Math.min(total, 100);
 
-            const width =
-                Math.min(total, 100);
+            progress.style.width = visualWidth + '%';
+            progress.textContent = total.toFixed(2) + '%';
+            progress.classList.remove('bg-success', 'bg-danger', 'bg-warning');
 
-            progress.style.width =
-                width + '%';
-
-            progress.textContent =
-                total.toFixed(2) + '%';
-
-            progress.classList.remove(
-                'bg-success',
-                'bg-danger',
-                'bg-warning'
-            );
-
-
-            if (total === 100) {
-
-                progress.classList.add(
-                    'bg-success'
-                );
-
+            if (Math.abs(total - 100) <= 0.01) {
+                progress.classList.add('bg-success');
             } else if (total > 100) {
-
-                progress.classList.add(
-                    'bg-danger'
-                );
-
+                progress.classList.add('bg-danger');
             } else {
-
-                progress.classList.add(
-                    'bg-warning'
-                );
-
+                progress.classList.add('bg-warning');
             }
-
         }
-
 
         if (message) {
-
             if (inputs.length === 0) {
-
-                message.textContent =
-                    'No targets in this section.';
-
-                message.className =
-                    'section-weight-message text-muted';
-
-
-            } else if (total === 100) {
-
-                message.textContent =
-                    'Weight allocation is complete.';
-
-                message.className =
-                    'section-weight-message text-success';
-
-
+                message.className = 'section-weight-message text-muted';
+                message.textContent = sectionCode === 'SUMMARY_TASKS'
+                    ? 'Add at least one job-related target to Section 2.'
+                    : 'No tasks are available in this section.';
+            } else if (Math.abs(total - 100) <= 0.01) {
+                message.className = 'section-weight-message text-success';
+                message.textContent = 'Task weight allocation is complete.';
             } else if (total < 100) {
-
-                const remaining =
-                    100 - total;
-
-                message.textContent =
-                    remaining.toFixed(2) +
-                    '% still needs to be allocated.';
-
-                message.className =
-                    'section-weight-message text-warning';
-
-
+                message.className = 'section-weight-message text-warning';
+                message.textContent = (100 - total).toFixed(2) + '% still needs to be allocated.';
             } else {
-
-                const excess =
-                    total - 100;
-
-                message.textContent =
-                    'Weight exceeds 100% by ' +
-                    excess.toFixed(2) +
-                    '%.';
-
-                message.className =
-                    'section-weight-message text-danger';
-
+                message.className = 'section-weight-message text-danger';
+                message.textContent = 'Task weights exceed 100% by ' + (total - 100).toFixed(2) + '%.';
             }
-
         }
-
     });
-
 }
 
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.target-type-select').forEach(function(select) {
+        toggleTargetTypeFields(select);
+    });
 
-/* ============================================================
-   PAGE INITIALISATION
-============================================================ */
+    document.querySelectorAll('.frequency-select').forEach(function(select) {
+        toggleFrequencyFields(select);
+    });
 
-document.addEventListener(
-    'DOMContentLoaded',
-    function () {
-
-        document.querySelectorAll(
-            '.target-type-select'
-        ).forEach(function (select) {
-
-            toggleTargetTypeFields(select);
-
-        });
-
-
-        document.querySelectorAll(
-            '.frequency-select'
-        ).forEach(function (select) {
-
-            toggleFrequencyFields(select);
-
-        });
-
-
-        calculateSectionWeights();
-
-    }
-);
-
+    calculateSectionWeightTotal();
+    calculateTaskWeights();
+});
 </script>
-
 @endpush

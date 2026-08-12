@@ -4,6 +4,7 @@ namespace App\Models\Performance;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PerformanceTargetItem extends Model
 {
@@ -12,34 +13,56 @@ class PerformanceTargetItem extends Model
     protected $fillable = [
         'performance_target_id',
         'sort_order',
+
+        'section_code',
+        'section_title',
+        'is_default',
+
         'perspective',
         'target_type',
         'frequency',
+
         'due_day',
         'due_month',
         'due_weekday',
+
         'task',
         'how_to_achieve',
         'measure_target',
+
         'per_cycle_target_value',
         'period_target_value',
         'unit_of_measure',
+
         'evaluation_method',
         'target_description',
+
+        'weight',
+
         'due_date',
+
         'assessor_comment',
         'hr_comment',
-        'weight',
     ];
 
     protected $casts = [
+        'is_default' => 'boolean',
+
         'due_date' => 'date',
+
+        'due_day' => 'integer',
+        'due_month' => 'integer',
+        'due_weekday' => 'integer',
+
         'per_cycle_target_value' => 'decimal:2',
         'period_target_value' => 'decimal:2',
+
         'weight' => 'decimal:2',
+
+        'sort_order' => 'integer',
     ];
 
-    public function performanceTarget()
+    public function performanceTarget(): BelongsTo
     {
         return $this->belongsTo(PerformanceTarget::class);
     }
@@ -50,17 +73,21 @@ class PerformanceTargetItem extends Model
             return 'One Time';
         }
 
-        return ucfirst($this->frequency);
+        return ucfirst($this->frequency ?? '');
     }
 
     public function deadlineLabel(): string
     {
         if ($this->target_type === 'one_time') {
-            return $this->due_date ? $this->due_date->format('d/m/Y') : 'N/A';
+            return $this->due_date
+                ? $this->due_date->format('d/m/Y')
+                : 'N/A';
         }
 
         if ($this->frequency === 'monthly' && $this->due_day) {
-            return $this->due_day . $this->daySuffix($this->due_day) . ' of every month';
+            return $this->due_day .
+                $this->daySuffix($this->due_day) .
+                ' of every month';
         }
 
         if ($this->frequency === 'weekly' && $this->due_weekday) {
@@ -68,17 +95,23 @@ class PerformanceTargetItem extends Model
         }
 
         if ($this->frequency === 'quarterly') {
-            return $this->due_day ? 'By day ' . $this->due_day . ' of each quarter' : 'Quarterly';
+            return $this->due_day
+                ? 'By day ' . $this->due_day . ' of each quarter'
+                : 'Quarterly';
         }
 
         if ($this->frequency === 'annual') {
             if ($this->due_day && $this->due_month) {
-                return $this->due_day . $this->daySuffix($this->due_day) . ' of month ' . $this->due_month;
+                return $this->due_day .
+                    $this->daySuffix($this->due_day) .
+                    ' of month ' .
+                    $this->due_month;
             }
+
             return 'Annual';
         }
 
-        return ucfirst($this->frequency);
+        return ucfirst($this->frequency ?? '');
     }
 
     protected function daySuffix(int $day): string

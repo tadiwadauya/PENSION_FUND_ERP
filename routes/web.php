@@ -1,5 +1,7 @@
 <?php
 
+
+use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\ForcePasswordChangeController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
@@ -11,7 +13,7 @@ use App\Http\Controllers\Performance\PerformanceTarget\PerformancePeriodControll
 use App\Http\Controllers\Performance\PerformanceTarget\PerformanceTargetApprovalController;
 use App\Http\Controllers\Performance\PerformanceTarget\PerformanceTargetController;
 use App\Http\Controllers\Performance\PerformanceRatingScaleController;
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Performance\PerformanceAssessment\PerformanceAssessmentController;
 
 Route::get('/', function () {
     return view('auth.login');
@@ -74,6 +76,43 @@ Route::middleware(['auth', 'force.password.change'])->group(function () {
     */
     Route::middleware(['auth'])->group(function () {
     Route::resource('performance-rating-scales', PerformanceRatingScaleController::class);
+   Route::get('/performance-assessments', [PerformanceAssessmentController::class, 'index'])
+    ->name('performance-assessments.index');
+
+Route::post('/performance-targets/{performance_target}/start-assessment', [PerformanceAssessmentController::class, 'start'])
+    ->name('performance-assessments.start');
+
+Route::get('/performance-assessments/{performance_assessment}', [PerformanceAssessmentController::class, 'show'])
+    ->name('performance-assessments.show');
+
+Route::post('/performance-assessments/{performance_assessment}/save-self', [PerformanceAssessmentController::class, 'saveSelfAssessment'])
+    ->name('performance-assessments.save-self');
+
+Route::post('/performance-assessments/{performance_assessment}/submit-self', [PerformanceAssessmentController::class, 'submitSelfAssessment'])
+    ->name('performance-assessments.submit-self');
+
+Route::get('/performance-assessments/{performance_assessment}/assessor', [PerformanceAssessmentController::class, 'assessor'])
+    ->name('performance-assessments.assessor');
+
+Route::post('/performance-assessments/{performance_assessment}/assessor/save', [PerformanceAssessmentController::class, 'saveAssessorAssessment'])
+    ->name('performance-assessments.assessor.save');
+
+Route::post('/performance-assessments/{performance_assessment}/assessor/submit', [PerformanceAssessmentController::class, 'submitAssessorAssessment'])
+    ->name('performance-assessments.assessor.submit');
+Route::get('/performance-assessments/{performance_assessment}/print', [PerformanceAssessmentController::class, 'print'])
+    ->name('performance-assessments.print');
+
+Route::get('/performance-assessments/{performance_assessment}/reviewer', [PerformanceAssessmentController::class, 'reviewer'])
+    ->name('performance-assessments.reviewer');
+
+Route::post('/performance-assessments/{performance_assessment}/reviewer/save', [PerformanceAssessmentController::class, 'saveReviewerAssessment'])
+    ->name('performance-assessments.reviewer.save');
+
+Route::post('/performance-assessments/{performance_assessment}/reviewer/submit', [PerformanceAssessmentController::class, 'submitReviewerAssessment'])
+    ->name('performance-assessments.reviewer.submit');
+
+Route::post('/performance-assessments/{performance_assessment}/complete', [PerformanceAssessmentController::class, 'completeAssessment'])
+    ->name('performance-assessments.complete');
 });
 
     /*
