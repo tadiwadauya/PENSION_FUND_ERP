@@ -8,6 +8,10 @@ use App\Models\Performance\PerformanceAssessmentCycle;
 use App\Models\Performance\PerformanceAssessmentItem;
 use App\Models\Performance\PerformanceRatingScale;
 use App\Models\Performance\PerformanceTarget;
+use App\Notifications\PerformanceAssessmentSubmittedNotification;
+use App\Notifications\PerformanceAssessmentAssessorSubmittedNotification;
+use App\Notifications\PerformanceAssessmentReviewerSubmittedNotification;
+use App\Notifications\PerformanceAssessmentCompletedNotification;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -284,48 +288,62 @@ class PerformanceAssessmentController extends Controller
             ->with('success', 'Self-assessment saved successfully.');
     }
 
-    public function submitSelfAssessment(Request $request, PerformanceAssessment $performance_assessment)
-    {
-        $this->authorizeEmployeeEdit($performance_assessment);
+   public function submitSelfAssessment(Request $request, PerformanceAssessment $performance_assessment)
+{
+    $this->authorizeEmployeeEdit($performance_assessment);
 
-        $performance_assessment->load('items.cycles');
+    $performance_assessment->load([
+        'items.cycles',
+        'user',
+        'assessor',
+    ]);
 
-        foreach ($performance_assessment->items as $item) {
-            if ($item->cycles->isEmpty()) {
-                continue;
-            }
-
-            if ($item->evaluation_method === 'per_cycle') {
-                $incomplete = $item->cycles->contains(function ($cycle) {
-                    return $cycle->employee_met_target === null;
-                });
-            } else {
-                $incomplete = $item->cycles->contains(function ($cycle) {
-                    return $cycle->employee_actual_value === null;
-                });
-            }
-
-            if ($incomplete) {
-                return back()->withErrors([
-                    'assessment' => 'Please complete all assessment cycles for "' .
-                        $item->task .
-                        '" before submitting.',
-                ]);
-            }
+    foreach ($performance_assessment->items as $item) {
+        if ($item->cycles->isEmpty()) {
+            continue;
         }
 
-        DB::transaction(function () use ($performance_assessment) {
-            $this->recalculateEmployeeAssessment($performance_assessment);
+        if ($item->evaluation_method === 'per_cycle') {
+            $incomplete = $item->cycles->contains(function ($cycle) {
+                return $cycle->employee_met_target === null;
+            });
+        } else {
+            $incomplete = $item->cycles->contains(function ($cycle) {
+                return $cycle->employee_actual_value === null;
+            });
+        }
 
-            $performance_assessment->update([
-                'status' => 'submitted_by_employee',
-                'employee_submitted_at' => now(),
+        if ($incomplete) {
+            return back()->withErrors([
+                'assessment' => 'Please complete all assessment cycles for "' . $item->task . '" before submitting.',
             ]);
-        });
-
-        return redirect()->route('performance-assessments.show', $performance_assessment->id)
-            ->with('success', 'Performance self-assessment submitted to the assessor successfully.');
+        }
     }
+
+    DB::transaction(function () use ($performance_assessment) {
+        $this->recalculateEmployeeAssessment($performance_assessment);
+
+        $performance_assessment->update([
+            'status' => 'submitted_by_employee',
+            'employee_submitted_at' => now(),
+        ]);
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Notify Assessor
+    |--------------------------------------------------------------------------
+    */
+
+    if ($performance_assessment->assessor) {
+        $performance_assessment->assessor->notify(
+            new PerformanceAssessmentSubmittedNotification($performance_assessment)
+        );
+    }
+
+    return redirect()->route('performance-assessments.show', $performance_assessment->id)
+        ->with('success', 'Performance self-assessment submitted to the assessor successfully.');
+}
 
     /*
     |--------------------------------------------------------------------------
@@ -437,48 +455,78 @@ class PerformanceAssessmentController extends Controller
             ->with('success', 'Assessor assessment saved successfully.');
     }
 
-    public function submitAssessorAssessment(Request $request, PerformanceAssessment $performance_assessment)
-    {
-        $this->authorizeAssessorEdit($performance_assessment);
+  public function submitAssessorAssessment(Request $request, PerformanceAssessment $performance_assessment)
+{
+    $this->authorizeAssessorEdit($performance_assessment);
 
-        $performance_assessment->load('items.cycles');
+    $performance_assessment->load([
+        'items.cycles',
+        'user',
+        'assessor',
+        'reviewer',
+    ]);
 
-        foreach ($performance_assessment->items as $item) {
-            if ($item->cycles->isEmpty()) {
-                continue;
-            }
-
-            if ($item->evaluation_method === 'per_cycle') {
-                $incomplete = $item->cycles->contains(function ($cycle) {
-                    return $cycle->assessor_met_target === null;
-                });
-            } else {
-                $incomplete = $item->cycles->contains(function ($cycle) {
-                    return $cycle->assessor_actual_value === null;
-                });
-            }
-
-            if ($incomplete) {
-                return back()->withErrors([
-                    'assessment' => 'Please complete the assessor assessment for "' .
-                        $item->task .
-                        '" before submitting.',
-                ]);
-            }
+    foreach ($performance_assessment->items as $item) {
+        if ($item->cycles->isEmpty()) {
+            continue;
         }
 
-        DB::transaction(function () use ($performance_assessment) {
-            $this->recalculateAssessorAssessment($performance_assessment);
+        if ($item->evaluation_method === 'per_cycle') {
+            $incomplete = $item->cycles->contains(function ($cycle) {
+                return $cycle->assessor_met_target === null;
+            });
+        } else {
+            $incomplete = $item->cycles->contains(function ($cycle) {
+                return $cycle->assessor_actual_value === null;
+            });
+        }
 
-            $performance_assessment->update([
-                'status' => 'submitted_to_reviewer',
-                'assessor_assessed_at' => now(),
+        if ($incomplete) {
+            return back()->withErrors([
+                'assessment' => 'Please complete the assessor assessment for "' . $item->task . '" before submitting.',
             ]);
-        });
-
-        return redirect()->route('performance-assessments.show', $performance_assessment->id)
-            ->with('success', 'Assessor assessment submitted to the reviewer successfully.');
+        }
     }
+
+    DB::transaction(function () use ($performance_assessment) {
+        $this->recalculateAssessorAssessment($performance_assessment);
+
+        $performance_assessment->update([
+            'status' => 'submitted_to_reviewer',
+            'assessor_assessed_at' => now(),
+        ]);
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Notify Reviewer
+    |--------------------------------------------------------------------------
+    */
+
+    if ($performance_assessment->reviewer) {
+        $performance_assessment->reviewer->notify(
+            new PerformanceAssessmentAssessorSubmittedNotification($performance_assessment)
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Notify Employee
+    |--------------------------------------------------------------------------
+    */
+
+    if ($performance_assessment->user) {
+        $performance_assessment->user->notify(
+            new PerformanceAssessmentAssessorSubmittedNotification(
+                $performance_assessment,
+                'Your performance assessment has been completed by the assessor and submitted to the reviewer.'
+            )
+        );
+    }
+
+    return redirect()->route('performance-assessments.show', $performance_assessment->id)
+        ->with('success', 'Assessor assessment submitted to the reviewer successfully.');
+}
 
     /*
     |--------------------------------------------------------------------------
@@ -1603,7 +1651,13 @@ public function submitReviewerAssessment(Request $request, PerformanceAssessment
 {
     $this->authorizeReviewerEdit($performance_assessment);
 
-    $performance_assessment->load('items.cycles');
+    $performance_assessment->load([
+        'items.cycles',
+        'user',
+        'assessor',
+        'reviewer',
+        'hrReviewer',
+    ]);
 
     foreach ($performance_assessment->items as $item) {
         if ($item->cycles->isEmpty()) {
@@ -1622,9 +1676,7 @@ public function submitReviewerAssessment(Request $request, PerformanceAssessment
 
         if ($incomplete) {
             return back()->withErrors([
-                'assessment' => 'Please complete the reviewer assessment for "' .
-                    $item->task .
-                    '" before submitting.',
+                'assessment' => 'Please complete the reviewer assessment for "' . $item->task . '" before submitting.',
             ]);
         }
     }
@@ -1639,8 +1691,52 @@ public function submitReviewerAssessment(Request $request, PerformanceAssessment
         ]);
     });
 
-    return redirect()
-        ->route('performance-assessments.show', $performance_assessment->id)
+    /*
+    |--------------------------------------------------------------------------
+    | Notify HR Reviewer
+    |--------------------------------------------------------------------------
+    */
+
+    if ($performance_assessment->hrReviewer) {
+        $performance_assessment->hrReviewer->notify(
+            new PerformanceAssessmentReviewerSubmittedNotification($performance_assessment)
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Notify Employee
+    |--------------------------------------------------------------------------
+    */
+
+    if ($performance_assessment->user) {
+        $performance_assessment->user->notify(
+            new PerformanceAssessmentReviewerSubmittedNotification(
+                $performance_assessment,
+                'Your performance assessment has been reviewed and is awaiting HR final confirmation.'
+            )
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Notify Assessor
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+        $performance_assessment->assessor &&
+        $performance_assessment->assessor_id !== $performance_assessment->user_id
+    ) {
+        $performance_assessment->assessor->notify(
+            new PerformanceAssessmentReviewerSubmittedNotification(
+                $performance_assessment,
+                'The performance assessment for ' . $performance_assessment->user->fullName() . ' has been reviewed and is awaiting HR final confirmation.'
+            )
+        );
+    }
+
+    return redirect()->route('performance-assessments.show', $performance_assessment->id)
         ->with('success', 'Reviewer assessment submitted successfully. The appraisal is now awaiting HR final confirmation.');
 }
 
@@ -1775,14 +1871,70 @@ public function completeAssessment(Request $request, PerformanceAssessment $perf
         'hr_general_comment' => ['nullable', 'string', 'max:5000'],
     ]);
 
+    $performance_assessment->load([
+        'user',
+        'assessor',
+        'reviewer',
+        'hrReviewer',
+        'period',
+    ]);
+
     $performance_assessment->update([
         'hr_general_comment' => $request->hr_general_comment,
         'status' => 'completed',
         'completed_at' => now(),
     ]);
 
-    return redirect()
-        ->route('performance-assessments.show', $performance_assessment->id)
+    /*
+    |--------------------------------------------------------------------------
+    | Notify Employee
+    |--------------------------------------------------------------------------
+    */
+
+    if ($performance_assessment->user) {
+        $performance_assessment->user->notify(
+            new PerformanceAssessmentCompletedNotification($performance_assessment)
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Notify Assessor
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+        $performance_assessment->assessor &&
+        $performance_assessment->assessor_id !== $performance_assessment->user_id
+    ) {
+        $performance_assessment->assessor->notify(
+            new PerformanceAssessmentCompletedNotification(
+                $performance_assessment,
+                'The performance appraisal for ' . $performance_assessment->user->fullName() . ' has been completed and confirmed by Human Resources.'
+            )
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Notify Reviewer
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+        $performance_assessment->reviewer &&
+        $performance_assessment->reviewer_id !== $performance_assessment->user_id &&
+        $performance_assessment->reviewer_id !== $performance_assessment->assessor_id
+    ) {
+        $performance_assessment->reviewer->notify(
+            new PerformanceAssessmentCompletedNotification(
+                $performance_assessment,
+                'The performance appraisal for ' . $performance_assessment->user->fullName() . ' has been completed and confirmed by Human Resources.'
+            )
+        );
+    }
+
+    return redirect()->route('performance-assessments.show', $performance_assessment->id)
         ->with('success', 'Performance appraisal completed successfully.');
 }
 
